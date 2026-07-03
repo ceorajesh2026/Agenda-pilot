@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2",
+    "pdf-lib": "npm:pdf-lib",
+    "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk",
+    "xlsx": "npm:xlsx",
+    "jszip": "npm:jszip"
+  }
+}

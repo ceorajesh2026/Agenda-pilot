@@ -1,0 +1,277 @@
+<style>
+  :root{
+    --ground:#EEF1F7;
+    --panel:#FFFFFF;
+    --ink:#131A26;
+    --muted:#5C6A7E;
+    --faint:#8894A6;
+    --hair:#D8DFEA;
+    --accent:#2C3766;          /* deep clinical indigo — structure */
+    --accent-2:#3B4A86;
+    --floor:#1C7C67;  --floor-bg:#E2EFEA;
+    --target:#A96E24; --target-bg:#F6ECDB;
+    --ops:#39468F;    --ops-bg:#E6E9F5;
+    --event:#AE382F;  --event-bg:#F6E3E0;
+    --dep:#6B7891;    --dep-bg:#E9EDF4;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  .wrap{
+    font-family:var(--sans);
+    color:var(--ink);
+    background:var(--ground);
+    max-width:1180px;
+    margin:0 auto;
+    padding:26px 22px 40px;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- header ---------- */
+  .masthead{
+    position:relative; overflow:hidden;
+    background:linear-gradient(105deg,var(--accent) 0%,var(--accent-2) 100%);
+    color:#fff; border-radius:14px;
+    padding:24px 26px 22px;
+  }
+  .eeg{position:absolute; inset:0; width:100%; height:100%; opacity:.16; pointer-events:none}
+  .kicker{
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.22em;
+    text-transform:uppercase; color:#C6CEEA; margin:0 0 8px;
+  }
+  .masthead h1{
+    font-size:29px; line-height:1.08; font-weight:800; letter-spacing:-.02em;
+    margin:0; text-wrap:balance; max-width:20ch;
+  }
+  .masthead p.sub{margin:9px 0 0; font-size:14px; color:#D5DBF0; max-width:60ch}
+  .stats{position:relative; display:flex; flex-wrap:wrap; gap:10px; margin-top:18px}
+  .stat{
+    background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.16);
+    border-radius:9px; padding:8px 13px; min-width:112px;
+  }
+  .stat .n{font-family:var(--mono); font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+  .stat .l{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:#BFC8E8; margin-top:2px}
+
+  /* ---------- legend ---------- */
+  .legend{display:flex; flex-wrap:wrap; gap:16px 20px; align-items:center; margin:20px 2px 12px}
+  .lg{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--muted)}
+  .sw{width:24px; height:12px; border-radius:3px; flex:none}
+  .sw.floor{background:var(--floor)} .sw.target{background:var(--target)}
+  .sw.ops{background:var(--ops)} .sw.event{background:var(--event)}
+  .sw.dep{background:var(--dep-bg); border:1px solid var(--dep); position:relative}
+  .sw.dep::after{content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--dep); border-radius:3px 0 0 3px}
+  .dia{width:12px; height:12px; background:var(--panel); border:2px solid var(--event); transform:rotate(45deg); flex:none}
+
+  /* ---------- chart ---------- */
+  .scroll{overflow-x:auto; background:var(--panel); border:1px solid var(--hair); border-radius:14px; padding:14px 16px 18px}
+  .chart{
+    min-width:940px;
+    display:grid;
+    grid-template-columns:210px repeat(8,minmax(74px,1fr));
+    grid-template-rows:50px 46px 26px repeat(7,42px) 30px repeat(9,29px);
+    position:relative;
+  }
+  .guide{grid-row:1 / -1; border-right:1px solid var(--hair); z-index:0}
+  .guide.first{border-left:2px solid var(--accent)}          /* "today" edge */
+  .guide.event{background:repeating-linear-gradient(45deg,transparent,transparent 7px,rgba(174,56,47,.05) 7px,rgba(174,56,47,.05) 8px)}
+
+  .whead{grid-row:1; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; padding-left:9px; z-index:2}
+  .whead .w{font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:.04em}
+  .whead .d{font-family:var(--mono); font-size:10px; color:var(--faint); font-variant-numeric:tabular-nums; margin-top:1px}
+  .corner{grid-row:1; grid-column:1; display:flex; align-items:flex-end; padding:0 0 6px 2px; z-index:2}
+  .corner span{font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint)}
+
+  /* gate verticals + markers */
+  .gline{grid-row:2 / 11; border-left:2px dashed rgba(174,56,47,.45); z-index:1}
+  .gate{grid-row:2; display:flex; align-items:center; gap:7px; z-index:4; padding-top:2px}
+  .gate .dia{width:13px; height:13px; background:var(--panel); border:2px solid var(--event); transform:rotate(45deg)}
+  .gate .gt{display:flex; flex-direction:column; line-height:1.15}
+  .gate .gt b{font-family:var(--mono); font-size:11px; color:var(--event); font-weight:700}
+  .gate .gt small{font-size:10px; color:var(--muted); white-space:nowrap}
+
+  .band{grid-column:1 / -1; display:flex; align-items:center; gap:9px; z-index:2}
+  .band span{font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); font-weight:600}
+  .band .rule{height:1px; background:var(--hair); flex:1}
+
+  .rowlab{grid-column:1; display:flex; align-items:center; gap:9px; padding-right:10px; z-index:2}
+  .rowlab .id{font-family:var(--mono); font-size:11.5px; font-weight:700; color:#fff; background:var(--muted); border-radius:5px; padding:2px 6px; min-width:34px; text-align:center}
+  .rowlab .id.floor{background:var(--floor)} .rowlab .id.target{background:var(--target)}
+  .rowlab .id.ops{background:var(--ops)} .rowlab .id.event{background:var(--event)}
+  .rowlab .nm{font-size:13px; font-weight:600; line-height:1.12; letter-spacing:-.01em}
+  .rowlab.dep .nm{font-size:12px; font-weight:500; color:var(--muted)}
+
+  .bar{
+    align-self:center; height:30px; border-radius:7px; z-index:3;
+    display:flex; align-items:center; gap:8px; padding:0 11px; color:#fff;
+    box-shadow:0 1px 2px rgba(19,26,38,.14);
+    margin:0 3px;
+  }
+  .bar b{font-size:12px; font-weight:600; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .bar .dt{font-family:var(--mono); font-size:10.5px; opacity:.86; font-variant-numeric:tabular-nums; margin-left:auto; white-space:nowrap}
+  .bar.floor{background:var(--floor)} .bar.target{background:var(--target)}
+  .bar.ops{background:var(--ops)} .bar.event{background:var(--event)}
+  .bar.dep{
+    height:21px; border-radius:5px; color:var(--ink); background:var(--dep-bg);
+    border:1px solid #CFD7E4; border-left:5px solid var(--dep); box-shadow:none; padding:0 9px;
+  }
+  .bar.dep b{font-size:11px; font-weight:500; color:#3B475C}
+  .bar.dep .need{font-family:var(--mono); font-size:10px; color:var(--dep); margin-left:auto; white-space:nowrap}
+
+  /* ---------- footer ---------- */
+  .foot{display:grid; grid-template-columns:1.4fr 1fr; gap:14px; margin-top:16px}
+  @media(max-width:720px){.foot{grid-template-columns:1fr}}
+  .card{background:var(--panel); border:1px solid var(--hair); border-radius:12px; padding:15px 17px}
+  .card h3{margin:0 0 9px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); font-family:var(--mono); font-weight:600}
+  .ladder{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px}
+  .ladder li{font-size:12.5px; color:var(--muted); display:flex; gap:9px; align-items:baseline; line-height:1.35}
+  .ladder li .k{font-family:var(--mono); font-size:11px; color:var(--faint); flex:none}
+  .floorcard{background:var(--floor-bg); border-color:#BFDDD2}
+  .floorcard h3{color:var(--floor)}
+  .floorcard p{margin:0; font-size:13.5px; line-height:1.5; color:#1c4a40; font-weight:500}
+  .floorcard .em{color:var(--floor); font-weight:700}
+  .metaline{margin:16px 2px 0; font-size:11.5px; color:var(--faint); font-family:var(--mono)}
+  .stretch{margin-top:8px; font-size:11.5px; color:var(--faint)}
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <svg class="eeg" viewBox="0 0 1200 140" preserveAspectRatio="none" aria-hidden="true">
+      <polyline fill="none" stroke="#ffffff" stroke-width="1.5"
+        points="0,70 60,70 78,70 88,40 98,100 108,58 118,72 175,72 200,72 214,66 226,20 238,116 250,60 262,72 330,72 360,72 372,68 384,44 394,96 404,64 416,72 480,72 520,72 534,70 546,30 558,108 570,62 582,72 650,72 690,72 704,68 716,46 726,94 736,60 748,72 820,72 860,72 874,70 886,26 898,112 910,58 922,72 990,72 1030,72 1044,68 1056,42 1066,98 1076,62 1088,72 1160,72 1200,72"/>
+    </svg>
+    <p class="kicker">Implementation Roadmap · v1</p>
+    <h1>AgendaPilot — 7-Week Delivery Plan</h1>
+    <p class="sub">WNS 2026 · World Neurosciences Summit · disruption-recovery agenda manager. Data-first sequencing, a guaranteed floor, and three go/no-go gates.</p>
+    <div class="stats">
+      <div class="stat"><div class="n">~7 wks</div><div class="l">Runway from 3 Jul</div></div>
+      <div class="stat"><div class="n">Aug 20–23</div><div class="l">Event (Thu–Sun)</div></div>
+      <div class="stat"><div class="n">Aug 1</div><div class="l">Single source of truth</div></div>
+      <div class="stat"><div class="n">856</div><div class="l">Active faculty</div></div>
+      <div class="stat"><div class="n">3</div><div class="l">Go / no-go gates</div></div>
+    </div>
+  </header>
+
+  <div class="legend">
+    <div class="lg"><span class="sw floor"></span>Floor — must ship</div>
+    <div class="lg"><span class="sw target"></span>Target — AI agent</div>
+    <div class="lg"><span class="sw ops"></span>Distribution &amp; go-live</div>
+    <div class="lg"><span class="sw event"></span>Event</div>
+    <div class="lg"><span class="sw dep"></span>Organizer dependency</div>
+    <div class="lg"><span class="dia"></span>Go / no-go gate</div>
+  </div>
+
+  <div class="scroll">
+    <div class="chart">
+      <!-- background column guides -->
+      <div class="guide first" style="grid-column:2"></div>
+      <div class="guide" style="grid-column:3"></div>
+      <div class="guide" style="grid-column:4"></div>
+      <div class="guide" style="grid-column:5"></div>
+      <div class="guide" style="grid-column:6"></div>
+      <div class="guide" style="grid-column:7"></div>
+      <div class="guide" style="grid-column:8"></div>
+      <div class="guide event" style="grid-column:9"></div>
+
+      <!-- gate vertical lines -->
+      <div class="gline" style="grid-column:6"></div>
+      <div class="gline" style="grid-column:8"></div>
+      <div class="gline" style="grid-column:9"></div>
+
+      <!-- week header -->
+      <div class="corner"><span>Phase / week</span></div>
+      <div class="whead" style="grid-column:2"><div class="w">W1</div><div class="d">Jul 3–10</div></div>
+      <div class="whead" style="grid-column:3"><div class="w">W2</div><div class="d">Jul 10–17</div></div>
+      <div class="whead" style="grid-column:4"><div class="w">W3</div><div class="d">Jul 17–24</div></div>
+      <div class="whead" style="grid-column:5"><div class="w">W4</div><div class="d">Jul 24–31</div></div>
+      <div class="whead" style="grid-column:6"><div class="w">W5</div><div class="d">Jul 31–Aug 7</div></div>
+      <div class="whead" style="grid-column:7"><div class="w">W6</div><div class="d">Aug 7–14</div></div>
+      <div class="whead" style="grid-column:8"><div class="w">W7</div><div class="d">Aug 14–20</div></div>
+      <div class="whead" style="grid-column:9"><div class="w">Event</div><div class="d">Aug 20–23</div></div>
+
+      <!-- gates -->
+      <div class="gate" style="grid-column:6"><span class="dia"></span><span class="gt"><b>G1</b><small>Floor live?</small></span></div>
+      <div class="gate" style="grid-column:8"><span class="dia"></span><span class="gt"><b>G2</b><small>Agent stable?</small></span></div>
+      <div class="gate" style="grid-column:9"><span class="dia"></span><span class="gt"><b>G3</b><small>Dry-run sign-off</small></span></div>
+
+      <!-- BUILD band -->
+      <div class="band" style="grid-row:3"><span>Build · engineering</span><span class="rule"></span></div>
+
+      <!-- M0 -->
+      <div class="rowlab" style="grid-row:4"><span class="id floor">M0</span><span class="nm">Foundations + long-lead kickoff</span></div>
+      <div class="bar floor" style="grid-row:4; grid-column:2 / 3"><b>Schema · auth · stack</b><span class="dt">Jul 3–10</span></div>
+
+      <!-- M1 -->
+      <div class="rowlab" style="grid-row:5"><span class="id floor">M1</span><span class="nm">Master schedule &amp; directory</span></div>
+      <div class="bar floor" style="grid-row:5; grid-column:3 / 5"><b>Import · entity-resolution · halls</b><span class="dt">Jul 10–24</span></div>
+
+      <!-- M2 -->
+      <div class="rowlab" style="grid-row:6"><span class="id floor">M2</span><span class="nm">Dashboard &amp; constraint engine</span></div>
+      <div class="bar floor" style="grid-row:6; grid-column:5 / 6"><b>Now/Next · conflict monitor</b><span class="dt">Jul 24–31</span></div>
+
+      <!-- M3 -->
+      <div class="rowlab" style="grid-row:7"><span class="id target">M3</span><span class="nm">Disruption agent &amp; approvals</span></div>
+      <div class="bar target" style="grid-row:7; grid-column:6 / 8"><b>Propose → 2-step approve → notify</b><span class="dt">Jul 31–Aug 12</span></div>
+
+      <!-- M4 -->
+      <div class="rowlab" style="grid-row:8"><span class="id ops">M4</span><span class="nm">Distribution hardening</span></div>
+      <div class="bar ops" style="grid-row:8; grid-column:6 / 8"><b>Website · ICS · PDF · retries</b><span class="dt">Aug 5–13</span></div>
+
+      <!-- M5 -->
+      <div class="rowlab" style="grid-row:9"><span class="id ops">M5</span><span class="nm">Dry run &amp; go-live</span></div>
+      <div class="bar ops" style="grid-row:9; grid-column:8 / 9"><b>Rehearsal · load · cutover</b><span class="dt">Aug 13–19</span></div>
+
+      <!-- Event -->
+      <div class="rowlab" style="grid-row:10"><span class="id event">▶</span><span class="nm">Event hypercare</span></div>
+      <div class="bar event" style="grid-row:10; grid-column:9 / 10"><b>War room</b><span class="dt">20–23</span></div>
+
+      <!-- DEP band -->
+      <div class="band" style="grid-row:11"><span>Organizer dependencies · start now</span><span class="rule"></span></div>
+
+      <div class="rowlab dep" style="grid-row:12"><span class="nm">WhatsApp / Meta verification</span></div>
+      <div class="bar dep" style="grid-row:12; grid-column:2 / 7"><b>Business verify + templates</b><span class="need">→ M3</span></div>
+
+      <div class="rowlab dep" style="grid-row:13"><span class="nm">Contact-gap chase + opt-in</span></div>
+      <div class="bar dep" style="grid-row:13; grid-column:2 / 8"><b>Collect numbers / flights</b><span class="need">rolling</span></div>
+
+      <div class="rowlab dep" style="grid-row:14"><span class="nm">Hall inventory + mapping</span></div>
+      <div class="bar dep" style="grid-row:14; grid-column:2 / 3"><b>Rooms → sessions</b><span class="need">→ M1</span></div>
+
+      <div class="rowlab dep" style="grid-row:15"><span class="nm">Chairs + deputies per track</span></div>
+      <div class="bar dep" style="grid-row:15; grid-column:2 / 6"><b>Approval routing</b><span class="need">→ M3</span></div>
+
+      <div class="rowlab dep" style="grid-row:16"><span class="nm">Backup-pool nominations</span></div>
+      <div class="bar dep" style="grid-row:16; grid-column:2 / 6"><b>Per topic area, confirmed</b><span class="need">→ Aug 1</span></div>
+
+      <div class="rowlab dep" style="grid-row:17"><span class="nm">Locked-slot list</span></div>
+      <div class="bar dep" style="grid-row:17; grid-column:2 / 5"><b>Keynote · quiz · inaugural</b><span class="need">→ M2</span></div>
+
+      <div class="rowlab dep" style="grid-row:18"><span class="nm">NS track scheduling</span></div>
+      <div class="bar dep" style="grid-row:18; grid-column:2 / 7"><b>Times + speakers, or display-only</b><span class="need">→ Aug 7</span></div>
+
+      <div class="rowlab dep" style="grid-row:19"><span class="nm">Website platform + dev</span></div>
+      <div class="bar dep" style="grid-row:19; grid-column:2 / 7"><b>Embed vs. deep integration</b><span class="need">→ M4</span></div>
+
+      <div class="rowlab dep" style="grid-row:20"><span class="nm">Hosting + event-day load</span></div>
+      <div class="bar dep" style="grid-row:20; grid-column:2 / 8"><b>Sizing the public feed</b><span class="need">→ M5</span></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="card">
+      <h3>De-scope ladder — cut top-down if slipping</h3>
+      <ul class="ladder">
+        <li><span class="k">1</span>Signage · badge-QR · flight API — already v1.1 (out)</li>
+        <li><span class="k">2</span>NS tracks → display-only until data lands</li>
+        <li><span class="k">3</span>WhatsApp channel → email + dashboard-driven calls carry the event</li>
+        <li><span class="k">4</span>AI agent → manual-assisted (proposes, humans apply; 2-step approval stays)</li>
+      </ul>
+      <p class="stretch">Stretch / v1.1 (not on timeline): flight-status API, digital signage, badge-QR check-in, full NS automation.</p>
+    </div>
+    <div class="card floorcard">
+      <h3>Absolute floor — survives every cut</h3>
+      <p>One <span class="em">always-correct agenda</span>, a <span class="em">conflict-aware dashboard</span>, and a way to reach affected people by <span class="em">email</span>. This ships by ~Aug 1 no matter what.</p>
+    </div>
+  </div>
+
+  <p class="metaline">Critical path: M1 (entity resolution + hall modelling). If M1 slips it eats M3. Four external risks most likely to move dates: chairs · backup pool · WhatsApp approval · hall data.</p>
+</div>

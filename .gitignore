@@ -1,0 +1,36 @@
+# Node
+node_modules/
+dist/
+.next/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Data build artifacts (seed is generated; keep source .xlsx/.docx)
+*.db
+etl/build/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / Office lock files
+~$*
+.DS_Store
+
+# Generated distribution artifacts (revised-agenda PDFs)
+app/server/generated/
+
+.vercel
+.env*
+
+# Faculty contact data (PII) — never publish; lives in Supabase now
+WNS 26 - NR-Faculty List*.xlsx
+WNS 26 - NS-Faculty List*.xlsx
+derived_data/
+app/src/data/seed.json
+seed-payload.json
