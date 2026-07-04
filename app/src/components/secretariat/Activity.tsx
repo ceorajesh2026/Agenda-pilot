@@ -4,7 +4,36 @@
 import { useEffect, useState } from 'react';
 import { useAgenda } from '../../lib/data';
 import { getChangelog, getOutbox, getWhatsapp } from '../../lib/publish';
-import type { Changelog, Outbox, Whatsapp } from '../../lib/publish';
+import type { Changelog, Outbox, Whatsapp, OutboxEmail, DeliveryStatus } from '../../lib/publish';
+
+// Maps a delivery status to a chip class + label. Null-safe: a missing status reads as
+// 'simulated' (older records / offline server never populated it).
+const DELIVERY_META: Record<DeliveryStatus, { chip: string; label: string }> = {
+  simulated:    { chip: 'track',     label: 'simulated' },
+  sent:         { chip: 'published', label: 'sent' },
+  sent_test:    { chip: 'info',      label: 'sent to test inbox' },
+  skipped_test: { chip: 'track',     label: 'skipped (test mode)' },
+  failed:       { chip: 'error',     label: 'failed' },
+  no_address:   { chip: 'warning',   label: 'no email address' },
+  partial:      { chip: 'warning',   label: 'partially sent' },
+};
+
+function DeliveryChip({ email }: { email: OutboxEmail }) {
+  const status: DeliveryStatus = email.delivery_status ?? 'simulated';
+  const meta = DELIVERY_META[status] ?? DELIVERY_META.simulated;
+  const showDetail = (status === 'failed' || status === 'partial') && !!email.delivery_detail;
+  return (
+    <span className="delivery-chip-wrap">
+      <span className={`chip ${meta.chip}`} title={email.delivery_detail || undefined}>{meta.label}</span>
+      {email.delivered_at && (
+        <span className="muted" style={{ fontSize: 11 }}>{new Date(email.delivered_at).toLocaleTimeString()}</span>
+      )}
+      {showDetail && (
+        <span className="muted" style={{ fontSize: 11, color: 'var(--red)' }}>{email.delivery_detail}</span>
+      )}
+    </span>
+  );
+}
 
 export default function Activity() {
   const { confId } = useAgenda();
@@ -47,6 +76,7 @@ export default function Activity() {
         <div className="session" key={e.id}>
           <div className="shead">
             <span className={`chip ${e.kind === 'broadcast' ? 'info' : 'published'}`}>{e.kind}</span>
+            <DeliveryChip email={e} />
             <span className="muted" style={{ fontSize: 12 }}>
               To: {e.to}{e.toCount ? ` (${e.toCount} recipients)` : ''}
             </span>

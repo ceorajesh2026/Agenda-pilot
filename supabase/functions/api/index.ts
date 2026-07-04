@@ -10,6 +10,7 @@ import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib";
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { handleImport } from "./import.ts";
 import { handleAuth, requireAdmin, requireAuth, requireMember } from "./auth.ts";
+import { dispatchEmails, type EmailMode, emailSettingsStore, loadEmailSettings } from "./email.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -466,7 +467,25 @@ async function doPublish(req: Request, ctx: Ctx, body: any) {
     conference_id: cid, at, kind: "broadcast", to_label: "All faculty + delegates", address: null,
     to_count: toCount, sample, subject: bSubject, body: bBody, pdf_path: pdfPath, pdf_name: pdfName, mailto: bMailto,
   });
-  if (outRows.length) await admin.from("outbox_emails").insert(outRows);
+  // Insert outbox rows and keep the persisted rows (with ids) for delivery.
+  let insertedOutbox: any[] = [];
+  if (outRows.length) {
+    const { data: outData } = await admin.from("outbox_emails").insert(outRows).select();
+    insertedOutbox = outData ?? [];
+  }
+
+  // Real email delivery (simulate/test/live). ALWAYS non-fatal: dispatchEmails
+  // records per-row delivery_status and never throws, so publish still returns 200.
+  let emailTarget = "queued (simulated)";
+  try {
+    const res = await dispatchEmails(insertedOutbox, {
+      conferenceId: cid, pdfPath, pdfUrl,
+    });
+    emailTarget = res.target;
+  } catch (err) {
+    emailTarget = "failed";
+    console.error("dispatchEmails threw (publish continues):", String((err as Error)?.message ?? err));
+  }
 
   // (3) whatsapp group post
   await admin.from("whatsapp_posts").insert({
@@ -479,7 +498,7 @@ async function doPublish(req: Request, ctx: Ctx, body: any) {
     { name: "Website feed", channel: "website", status: "refreshed", detail: `${feedsBase}/public/agenda.json`, attempts: 1 },
     { name: "ICS calendars", channel: "ics", status: "refreshed", detail: `${feedsBase}/ics/agenda.ics`, attempts: 1 },
     { name: "Revised PDF", channel: "pdf", status: "generated", detail: pdfUrl, attempts: 1 },
-    { name: "Email outbox", channel: "email", status: "queued", detail: `${notifications.length} personal + 1 broadcast (${toCount})`, attempts: 1 },
+    { name: "Email outbox", channel: "email", status: emailTarget, detail: `${notifications.length} personal + 1 broadcast (${toCount})`, attempts: 1 },
     { name: "Print program", channel: "print", status: "refreshed", detail: `${feedsBase}/print/day/${dayDate}`, attempts: 1 },
     { name: "WhatsApp groups", channel: "whatsapp", status: "posted", detail: "Faculty + Delegates", attempts: 1 },
   ];
@@ -628,6 +647,62 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true });
     }
 
+    if (p === "/settings/email" && method === "GET") {
+      const g = await requireAdmin(req);
+      if (g.resp) return g.resp;
+      const s = await loadEmailSettings();
+      return json({
+        key_present: !!s.api_key,
+        from: s.from,
+        mode: s.mode,
+        test_address: s.test_address,
+      });
+    }
+    if (p === "/settings/email" && method === "POST") {
+      const g = await requireAdmin(req);
+      if (g.resp) return g.resp;
+      const b = await readBody();
+      const cur = await loadEmailSettings();
+
+      // Resolve the intended next state (partial update).
+      let nextMode: EmailMode = cur.mode;
+      if (b.mode !== undefined) {
+        if (b.mode !== "simulate" && b.mode !== "test" && b.mode !== "live") {
+          return textResp("mode must be one of: simulate, test, live", "text/plain; charset=utf-8", 400);
+        }
+        nextMode = b.mode;
+      }
+      const nextKeyPresent = b.api_key ? true : !!cur.api_key;
+      const nextFrom = b.from !== undefined ? String(b.from) : cur.from;
+      const nextTest = b.test_address !== undefined ? String(b.test_address) : cur.test_address;
+
+      // Guard rails when arming a real-sending mode.
+      if (nextMode === "live" && (!nextKeyPresent || !nextFrom)) {
+        return textResp("live mode requires a saved Resend API key and a from address", "text/plain; charset=utf-8", 400);
+      }
+      if (nextMode === "test" && !nextTest) {
+        return textResp("test mode requires a test_address", "text/plain; charset=utf-8", 400);
+      }
+
+      try {
+        if (b.api_key !== undefined && b.api_key) await emailSettingsStore.setSetting("resend_api_key", String(b.api_key));
+        if (b.from !== undefined) await emailSettingsStore.setSetting("email_from", String(b.from));
+        if (b.mode !== undefined) await emailSettingsStore.setSetting("email_mode", nextMode);
+        if (b.test_address !== undefined) await emailSettingsStore.setSetting("email_test_address", String(b.test_address));
+      } catch (err) {
+        return json({ error: "save_failed", detail: String((err as Error)?.message ?? err) }, 500);
+      }
+
+      const s = await loadEmailSettings();
+      return json({
+        ok: true,
+        key_present: !!s.api_key,
+        from: s.from,
+        mode: s.mode,
+        test_address: s.test_address,
+      });
+    }
+
     if (parts[0] === "c" && parts[1]) {
       const confId = decodeURIComponent(parts[1]);
       const conference = await resolveConf(confId);
@@ -696,6 +771,9 @@ Deno.serve(async (req: Request) => {
         const emails = (data ?? []).map((e: any) => ({
           id: e.id, at: e.at, kind: e.kind, to: e.to_label, address: e.address, toCount: e.to_count, sample: e.sample,
           subject: e.subject, body: e.body, pdfName: e.pdf_name, pdfUrl: e.pdf_path ? pdfPublicUrl(e.pdf_path) : null, mailto: e.mailto,
+          deliveryStatus: e.delivery_status, deliveryDetail: e.delivery_detail, deliveredAt: e.delivered_at, providerId: e.provider_id,
+          // snake_case duplicates — the SPA types use these names
+          delivery_status: e.delivery_status, delivery_detail: e.delivery_detail, delivered_at: e.delivered_at,
         }));
         return json({ emails });
       }
@@ -782,6 +860,29 @@ Deno.serve(async (req: Request) => {
         const ctx = await loadCtx(conference);
         const date = decodeURIComponent(parts[4]);
         return textResp(printDayHtml(ctx, date), "text/html; charset=utf-8");
+      }
+
+      if (rest === "/delete" && method === "POST") {
+        // ADMIN only (a secretariat member passes the generic membership guard, so re-check).
+        const g = await requireAdmin(req);
+        if (g.resp) return g.resp;
+        const cid = conference.id;
+
+        // Best-effort storage cleanup: remove every object under `${cid}/` in both buckets.
+        for (const bucket of ["ap-uploads", "ap-pdfs"]) {
+          try {
+            const { data: objs } = await admin.storage.from(bucket).list(cid, { limit: 1000 });
+            const paths = (objs ?? []).map((o: any) => `${cid}/${o.name}`);
+            if (paths.length) await admin.storage.from(bucket).remove(paths);
+          } catch (err) {
+            console.error(`storage cleanup ${bucket} failed (continuing):`, String((err as Error)?.message ?? err));
+          }
+        }
+
+        // Delete the conference row; FK cascades remove days/halls/people/sessions/etc.
+        const del = await admin.from("conferences").delete().eq("id", cid);
+        if (del.error) return json({ error: "delete_failed", detail: del.error.message }, 500);
+        return json({ ok: true });
       }
 
       if (rest === "/reset" && method === "POST") {

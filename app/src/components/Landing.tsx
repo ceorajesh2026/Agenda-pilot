@@ -2,7 +2,7 @@
 // conferences as cards (from GET /conferences), offers a "＋ New conference" inline form,
 // and a Settings entry. Degrades to a friendly offline note when the API is unreachable.
 import { useEffect, useState } from 'react';
-import { listConferences, createConference } from '../lib/api';
+import { listConferences, createConference, deleteConference } from '../lib/api';
 import type { ConferenceSummary } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import AccountMenu from './AccountMenu';
@@ -94,17 +94,7 @@ export default function Landing({ onOpen, onSettings, onAdmin }:
           <div className="section-title" style={{ marginTop: 8 }}>Your conferences</div>
           <div className="conf-grid">
             {conferences.map((c) => (
-              <button key={c.id} className="conf-card" onClick={() => onOpen(c.id)}>
-                <div className="conf-card-head">
-                  <span className="conf-name">{c.name}</span>
-                  {c.sample && <span className="chip info">Sample</span>}
-                </div>
-                <div className="conf-dates">{fmtDates(c.start_date, c.end_date)}</div>
-                <div className="conf-foot">
-                  <span className={`chip ${statusChip(c.status)}`}>{c.status || 'draft'}</span>
-                  <span className="conf-open">Open →</span>
-                </div>
-              </button>
+              <ConferenceCard key={c.id} c={c} isAdmin={isAdmin} onOpen={onOpen} onDeleted={load} />
             ))}
 
             {isAdmin && (creating
@@ -118,6 +108,103 @@ export default function Landing({ onOpen, onSettings, onAdmin }:
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// A single conference card. Rendered as a div (role=button) rather than a real <button> so we
+// can nest an admin-only delete control inside it without invalid button-in-button markup.
+// Opening on click / Enter / Space; the delete control stops propagation so it never opens.
+function ConferenceCard({ c, isAdmin, onOpen, onDeleted }:
+  { c: ConferenceSummary; isAdmin: boolean; onOpen: (id: string) => void; onDeleted: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+
+  const open = () => { if (!confirming) onOpen(c.id); };
+
+  return (
+    <div
+      className="conf-card"
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (confirming) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(c.id); }
+      }}
+    >
+      <div className="conf-card-head">
+        <span className="conf-name">{c.name}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          {c.sample && <span className="chip info">Sample</span>}
+          {isAdmin && (
+            <button
+              className="conf-del"
+              title="Delete this conference"
+              aria-label={`Delete ${c.name}`}
+              onClick={(e) => { e.stopPropagation(); setConfirming(true); }}
+            >🗑</button>
+          )}
+        </span>
+      </div>
+      <div className="conf-dates">{fmtDates(c.start_date, c.end_date)}</div>
+      <div className="conf-foot">
+        <span className={`chip ${statusChip(c.status)}`}>{c.status || 'draft'}</span>
+        <span className="conf-open">Open →</span>
+      </div>
+
+      {confirming && (
+        <DeleteConferenceForm
+          conf={c}
+          onCancel={() => setConfirming(false)}
+          onDeleted={onDeleted}
+        />
+      )}
+    </div>
+  );
+}
+
+// Inline confirm flow: the admin must type the conference name exactly before Delete enables.
+function DeleteConferenceForm({ conf, onCancel, onDeleted }:
+  { conf: ConferenceSummary; onCancel: () => void; onDeleted: () => void }) {
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const matches = typed.trim() === conf.name.trim();
+
+  const confirm = async () => {
+    if (!matches) return;
+    setBusy(true); setError('');
+    const res = await deleteConference(conf.id);
+    setBusy(false);
+    if (res?.ok) onDeleted();
+    else setError("Couldn't delete the conference — the server may be offline. Please try again.");
+  };
+
+  return (
+    <div
+      className="conf-del-confirm"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <div className="sc-body" style={{ color: 'var(--red)', fontWeight: 600, marginBottom: 6 }}>
+        This permanently deletes the conference, its schedule, uploads, PDFs and team access.
+        Type the conference name to confirm.
+      </div>
+      <input
+        type="text"
+        value={typed}
+        onChange={(e) => setTyped(e.target.value)}
+        placeholder={conf.name}
+        autoFocus
+        style={{ width: '100%' }}
+      />
+      {error && <div className="sc-body" style={{ color: 'var(--red)', marginTop: 6 }}>{error}</div>}
+      <div className="btnrow" style={{ marginTop: 8 }}>
+        <button className="btn bad" disabled={busy || !matches} onClick={confirm}>
+          {busy ? 'Deleting…' : 'Delete conference'}
+        </button>
+        <button className="btn" disabled={busy} onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
 }

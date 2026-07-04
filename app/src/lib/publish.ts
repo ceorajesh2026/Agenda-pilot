@@ -28,11 +28,17 @@ export interface Changelog {
 }
 
 // ---- outbox + whatsapp feeds ----
+// Delivery status per email (backend fills this after publish). Null-safe: older records or an
+// offline server may omit it, so the UI treats a missing value as 'simulated'.
+export type DeliveryStatus =
+  | 'simulated' | 'sent' | 'sent_test' | 'skipped_test' | 'failed' | 'no_address' | 'partial';
+
 export interface OutboxEmail {
   id: string; at: string; kind: 'personal' | 'broadcast';
   to: string; address?: string | null; toCount?: number; sample?: string[];
   subject: string; body: string;
   pdfUrl?: string | null; pdfName?: string | null; mailto?: string | null;
+  delivery_status?: DeliveryStatus; delivery_detail?: string; delivered_at?: string;
 }
 export interface Outbox { emails: OutboxEmail[]; }
 

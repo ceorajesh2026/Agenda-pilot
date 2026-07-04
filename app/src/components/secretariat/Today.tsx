@@ -161,6 +161,17 @@ function FlowStatus() {
   );
 }
 
+// Colours a publish-target chip by its backend-provided status string. The 'Email outbox'
+// target now carries a real delivery status ('sent' / 'sent to test inbox' / 'failed' / …);
+// other targets keep their existing 'rate_limited'/ok behaviour. Null-safe on empty status.
+function targetChipClass(status: string): string {
+  const s = (status || '').toLowerCase();
+  if (s.includes('fail')) return 'error';
+  if (s.includes('test') || s.includes('simulat') || s === 'rate_limited' || s.includes('partial')) return 'warning';
+  if (s.includes('sent') || s.includes('ok') || s.includes('deliver') || s === 'published') return 'published';
+  return 'published';
+}
+
 function PublishedCard() {
   const wf = useWorkflow();
   const flow = wf.flow!;
@@ -175,9 +186,15 @@ function PublishedCard() {
 
       {dist?.ok && (
         <div className="btnrow" style={{ marginTop: 8 }}>
-          {dist.publication.targets.map((t, i) => (
-            <span key={i} className={`chip ${t.status === 'rate_limited' ? 'warning' : 'published'}`}>{t.name}</span>
-          ))}
+          {dist.publication.targets.map((t, i) => {
+            // The Email outbox target now carries a real delivery status string — show it as-is
+            // (e.g. "sent" / "sent to test inbox" / "failed") next to the target name.
+            const isEmail = /email outbox/i.test(t.name);
+            const label = isEmail && t.status ? `${t.name} · ${t.status}` : t.name;
+            return (
+              <span key={i} className={`chip ${targetChipClass(t.status)}`} title={t.detail || undefined}>{label}</span>
+            );
+          })}
         </div>
       )}
       {!dist?.ok && (

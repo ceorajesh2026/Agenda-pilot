@@ -264,6 +264,12 @@ export async function createConference(body: {
   return apiPost('/conferences', body);
 }
 
+// Permanently delete a conference (admin). Null-safe: null on offline/failure so the caller
+// can show an error note rather than optimistically dropping the card.
+export async function deleteConference(confId: string): Promise<{ ok: boolean } | null> {
+  return apiPost(`/c/${confId}/delete`, {});
+}
+
 // ---- agenda snapshot (same shapes as the old seed.json) ----
 export interface AgendaSnapshot extends Seed {
   conference?: ConferenceSummary;
@@ -280,6 +286,56 @@ export async function getAnthropicKeyStatus(): Promise<{ present: boolean } | nu
 
 export async function saveAnthropicKey(key: string): Promise<{ ok: boolean } | null> {
   return apiPost('/settings/anthropic-key', { key });
+}
+
+// ---- email delivery settings (admin-only; the server enforces 403) ----
+export type EmailMode = 'simulate' | 'test' | 'live';
+
+export interface EmailSettings {
+  key_present: boolean;
+  from: string;
+  mode: EmailMode;
+  test_address: string;
+}
+
+// GET current email-delivery settings. Null on offline/failure so the UI can show a note.
+export async function getEmailSettings(): Promise<EmailSettings | null> {
+  return apiGet('/settings/email');
+}
+
+// Save a PARTIAL patch (api_key is write-only; omit to keep the stored key). Distinguishes a
+// 400 with a plain-message error (e.g. live mode without a key) from an offline null so the
+// UI can show the exact message inline.
+export type SaveEmailResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function saveEmailSettings(body: {
+  api_key?: string; from?: string; mode?: EmailMode; test_address?: string;
+}): Promise<SaveEmailResult> {
+  try {
+    let r = await fetch(`${API_BASE}/settings/email`, {
+      method: 'POST', headers: headers(), body: JSON.stringify(body),
+    });
+    if (r.status === 401 && getSession()) {
+      if (await refreshSession()) {
+        r = await fetch(`${API_BASE}/settings/email`, {
+          method: 'POST', headers: headers(), body: JSON.stringify(body),
+        });
+      } else {
+        bounceToLogin();
+        return { ok: false, error: 'Your session has expired. Please sign in again.' };
+      }
+    }
+    if (r.ok) return { ok: true };
+    if (r.status === 400) {
+      const data = (await r.json().catch(() => null)) as { error?: string } | null;
+      return { ok: false, error: data?.error || "That combination isn't allowed." };
+    }
+    return { ok: false, error: "Couldn't save — the server may be offline. Please try again." };
+  } catch {
+    return { ok: false, error: "Couldn't save — the server may be offline. Please try again." };
+  }
 }
 
 // ---- Claude availability (for the import wizard) ----
