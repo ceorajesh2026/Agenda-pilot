@@ -2,9 +2,9 @@
 // key) and lets the user paste + save a new one. The key powers AI drafting of change copy
 // and file import. Null-safe against an offline backend.
 import { useEffect, useState } from 'react';
-import { getAnthropicKeyStatus, saveAnthropicKey } from '../lib/api';
+import { getAnthropicKeyStatus, saveAnthropicKey, changePassword } from '../lib/api';
 
-export default function Settings({ onBack }: { onBack: () => void }) {
+export default function Settings({ onBack, isAdmin = true }: { onBack: () => void; isAdmin?: boolean }) {
   const [present, setPresent] = useState<boolean | null>(null);
   const [offline, setOffline] = useState(false);
   const [key, setKey] = useState('');
@@ -13,12 +13,13 @@ export default function Settings({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState('');
 
   const load = () => {
+    if (!isAdmin) return;
     getAnthropicKeyStatus().then((res) => {
       if (res && typeof res.present === 'boolean') { setPresent(res.present); setOffline(false); }
       else { setPresent(null); setOffline(true); }
     });
   };
-  useEffect(load, []);
+  useEffect(load, [isAdmin]);
 
   const save = async () => {
     if (!key.trim()) return;
@@ -33,12 +34,13 @@ export default function Settings({ onBack }: { onBack: () => void }) {
     <div className="app">
       <header className="top">
         <h1>AgendaPilot</h1>
-        <div className="sub">Settings</div>
+        <div className="sub">{isAdmin ? 'Settings' : 'My account'}</div>
         <div style={{ marginLeft: 'auto' }}>
           <button className="btn sm" onClick={onBack}>‹ All conferences</button>
         </div>
       </header>
 
+      {isAdmin && (
       <div className="card" style={{ maxWidth: 620 }}>
         <div className="section-title" style={{ marginTop: 0 }}>Claude API key</div>
 
@@ -80,6 +82,48 @@ export default function Settings({ onBack }: { onBack: () => void }) {
         <p className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>
           Your key is stored on the server and never shown back here.
         </p>
+      </div>
+      )}
+
+      <ChangePasswordCard />
+    </div>
+  );
+}
+
+// Available to every signed-in user (admins and members alike).
+function ChangePasswordCard() {
+  const [pw, setPw] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async () => {
+    setError(''); setDone(false);
+    if (pw.length < 8) { setError('Please choose a password of at least 8 characters.'); return; }
+    if (pw !== confirm) { setError("Those passwords don't match."); return; }
+    setBusy(true);
+    const res = await changePassword(pw);
+    setBusy(false);
+    if (res?.ok) { setDone(true); setPw(''); setConfirm(''); }
+    else setError("Couldn't change your password — please try again.");
+  };
+
+  return (
+    <div className="card" style={{ maxWidth: 620, marginTop: 16 }}>
+      <div className="section-title" style={{ marginTop: 0 }}>Change my password</div>
+      <div className="frow col"><label>New password</label>
+        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)}
+          autoComplete="new-password" placeholder="At least 8 characters" style={{ width: '100%' }} />
+      </div>
+      <div className="frow col"><label>Confirm new password</label>
+        <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
+          autoComplete="new-password" placeholder="Type it again" style={{ width: '100%' }} />
+      </div>
+      {error && <div className="sc-body" style={{ color: 'var(--red)', marginBottom: 8 }}>{error}</div>}
+      {done && <div className="sc-body" style={{ color: 'var(--green)', marginBottom: 8 }}>Your password has been changed.</div>}
+      <div className="btnrow">
+        <button className="btn ok" disabled={busy || !pw || !confirm} onClick={submit}>{busy ? 'Saving…' : 'Update password'}</button>
       </div>
     </div>
   );

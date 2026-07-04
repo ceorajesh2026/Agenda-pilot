@@ -6,9 +6,18 @@ import { publicLinks } from '../lib/api';
 import { useWorkflow } from '../lib/workflow';
 import { PersonPicker, useDemoPerson } from './shared';
 
-export default function SpeakerView() {
+// `boundPersonId` (from the signed-in speaker's membership) locks the view to that one person:
+// no picker, no demo chip, no "Not you?" — they only ever see their own schedule.
+export default function SpeakerView({ boundPersonId = null }: { boundPersonId?: string | null }) {
   const [pid, setPid] = useState('');
   const demo = useDemoPerson();
+  const { peopleById } = useAgenda();
+
+  // Bound speaker: preselect and hide the picker entirely.
+  if (boundPersonId && peopleById.has(boundPersonId)) {
+    return <SpeakerHome pid={boundPersonId} onSwitch={null} />;
+  }
+
   if (!pid) {
     return (
       <div className="chair-wrap">
@@ -27,7 +36,7 @@ export default function SpeakerView() {
   return <SpeakerHome pid={pid} onSwitch={() => setPid('')} />;
 }
 
-function SpeakerHome({ pid, onSwitch }: { pid: string; onSwitch: () => void }) {
+function SpeakerHome({ pid, onSwitch }: { pid: string; onSwitch: (() => void) | null }) {
   const { confId, seed, peopleById, rolesByPerson, ROLE_LABEL } = useAgenda();
   const wf = useWorkflow();
   const person = peopleById.get(pid)!;
@@ -51,7 +60,7 @@ function SpeakerHome({ pid, onSwitch }: { pid: string; onSwitch: () => void }) {
       <div className="controls" style={{ marginBottom: 10 }}>
         <strong>{person.name}</strong>
         <span className="muted" style={{ fontSize: 12 }}>{person.institution}</span>
-        <button className="btn sm" onClick={onSwitch}>Not you?</button>
+        {onSwitch && <button className="btn sm" onClick={onSwitch}>Not you?</button>}
       </div>
 
       {pending.length > 0 && (

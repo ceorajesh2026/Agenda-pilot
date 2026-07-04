@@ -4,6 +4,8 @@
 import { useEffect, useState } from 'react';
 import { listConferences, createConference } from '../lib/api';
 import type { ConferenceSummary } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import AccountMenu from './AccountMenu';
 
 type LoadState = 'loading' | 'ready' | 'offline';
 
@@ -20,7 +22,10 @@ function fmtDates(start: string | null, end: string | null): string {
   return `${s.getDate()} ${mon(s)} – ${e.getDate()} ${mon(e)} ${e.getFullYear()}`;
 }
 
-export default function Landing({ onOpen, onSettings }: { onOpen: (id: string) => void; onSettings: () => void }) {
+export default function Landing({ onOpen, onSettings, onAdmin }:
+  { onOpen: (id: string) => void; onSettings: () => void; onAdmin: () => void }) {
+  const { me } = useAuth();
+  const isAdmin = !!me?.user.is_admin;
   const [state, setState] = useState<LoadState>('loading');
   const [conferences, setConferences] = useState<ConferenceSummary[]>([]);
   const [creating, setCreating] = useState(false);
@@ -44,8 +49,10 @@ export default function Landing({ onOpen, onSettings }: { onOpen: (id: string) =
       <header className="top">
         <h1>AgendaPilot</h1>
         <div className="sub">Run your conference agenda — disruptions handled in minutes</div>
-        <div style={{ marginLeft: 'auto' }}>
-          <button className="btn sm" onClick={onSettings}>⚙️ Settings</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {isAdmin && <button className="btn sm" onClick={onAdmin}>👥 Team &amp; access</button>}
+          {isAdmin && <button className="btn sm" onClick={onSettings}>⚙️ Settings</button>}
+          <AccountMenu />
         </div>
       </header>
 
@@ -72,7 +79,17 @@ export default function Landing({ onOpen, onSettings }: { onOpen: (id: string) =
         </div>
       )}
 
-      {state === 'ready' && (
+      {state === 'ready' && !isAdmin && conferences.length === 0 && (
+        <div className="landing-empty">
+          <div className="setup-hero" style={{ maxWidth: 460 }}>
+            <div className="setup-emoji">🗓️</div>
+            <h2 className="setup-title">No conferences yet</h2>
+            <p className="setup-lead">Ask your organizer to add you to a conference. Once they do, it'll appear here.</p>
+          </div>
+        </div>
+      )}
+
+      {state === 'ready' && (isAdmin || conferences.length > 0) && (
         <>
           <div className="section-title" style={{ marginTop: 8 }}>Your conferences</div>
           <div className="conf-grid">
@@ -90,14 +107,14 @@ export default function Landing({ onOpen, onSettings }: { onOpen: (id: string) =
               </button>
             ))}
 
-            {creating
+            {isAdmin && (creating
               ? <NewConferenceForm onCreated={(id) => { setCreating(false); onOpen(id); }} onCancel={() => setCreating(false)} onLocalAdd={load} />
               : (
                 <button className="conf-card conf-new" onClick={() => setCreating(true)}>
                   <span className="conf-plus">＋</span>
                   <span>New conference</span>
                 </button>
-              )}
+              ))}
           </div>
         </>
       )}

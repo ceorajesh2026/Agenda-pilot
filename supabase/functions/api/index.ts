@@ -9,6 +9,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib";
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { handleImport } from "./import.ts";
+import { handleAuth, requireAdmin, requireAuth, requireMember } from "./auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -570,11 +571,27 @@ Deno.serve(async (req: Request) => {
   const readBody = async () => { try { return await req.json(); } catch { return {}; } };
 
   try {
+    // Auth + admin-user management endpoints (public /auth/bootstrap-admin,
+    // authed /me + /auth/change-password, admin /admin/users*, /admin/memberships*).
+    const authRes = await handleAuth(req, p, method, readBody);
+    if (authRes) return authRes;
+
     if (p === "/conferences" && method === "GET") {
-      const { data } = await admin.from("conferences").select("*").order("created_at", { ascending: false });
+      // admin -> all; authed non-admin -> only their conferences; else 401.
+      const user = (await requireAuth(req)).user;
+      if (!user) return json({ error: "unauthorized" }, 401);
+      if (user.is_admin) {
+        const { data } = await admin.from("conferences").select("*").order("created_at", { ascending: false });
+        return json({ conferences: data ?? [] });
+      }
+      const confIds = [...new Set(user.memberships.map((m) => m.conference_id))];
+      if (!confIds.length) return json({ conferences: [] });
+      const { data } = await admin.from("conferences").select("*").in("id", confIds).order("created_at", { ascending: false });
       return json({ conferences: data ?? [] });
     }
     if (p === "/conferences" && method === "POST") {
+      const g = await requireAdmin(req);
+      if (g.resp) return g.resp;
       const b = await readBody();
       if (!b.name) return json({ error: "name_required" }, 400);
       const slug = b.slug ? slugify(b.slug) : slugify(b.name);
@@ -586,16 +603,24 @@ Deno.serve(async (req: Request) => {
       if (error) return json({ error: "insert_failed", detail: error.message }, 500);
       return json({ conference: data });
     }
-    if (p === "/admin/seed-wns" && method === "POST") return await seedWns(await readBody());
+    if (p === "/admin/seed-wns" && method === "POST") {
+      const g = await requireAdmin(req);
+      if (g.resp) return g.resp;
+      return await seedWns(await readBody());
+    }
     if (p === "/prose/health" && method === "GET") {
       const key = await getAnthropicKey();
       return json({ available: !!key, model: MODEL });
     }
     if (p === "/settings/anthropic-key" && method === "GET") {
+      const g = await requireAdmin(req);
+      if (g.resp) return g.resp;
       const key = await getAnthropicKey();
       return json({ present: !!key });
     }
     if (p === "/settings/anthropic-key" && method === "POST") {
+      const g = await requireAdmin(req);
+      if (g.resp) return g.resp;
       const b = await readBody();
       if (!b.key || !String(b.key).startsWith("sk-ant")) return json({ error: "invalid_key" }, 400);
       const { error } = await admin.from("app_settings").upsert({ key: "anthropic_api_key", value: b.key, updated_at: now() }, { onConflict: "key" });
@@ -607,13 +632,32 @@ Deno.serve(async (req: Request) => {
       const confId = decodeURIComponent(parts[1]);
       const conference = await resolveConf(confId);
       if (!conference) return json({ error: "conference_not_found" }, 404);
+      const cid0 = conference.id;
+
+      const rest = "/" + parts.slice(2).join("/");
+      const sub = parts[2]; // first path segment after the conference id
+
+      // ---- access control for this conference's routes ----------------------
+      // PUBLIC (no auth): feeds + printable programs.
+      const isPublic = sub === "public" || sub === "ics" || sub === "print";
+      if (!isPublic) {
+        // Everything else requires at least membership (admin passes always).
+        // uploads/* and imports/* + write mutations require secretariat/admin.
+        const secretariatWrite =
+          sub === "uploads" || sub === "imports" ||
+          (method === "POST" && (rest === "/publish" || rest === "/state" || rest === "/prose" || rest === "/reset")) ||
+          // report status updates: POST /c/:id/reports/:rid
+          (method === "POST" && parts[2] === "reports" && !!parts[3]);
+        const guard = secretariatWrite
+          ? await requireMember(req, cid0, ["secretariat", "admin"])
+          : await requireMember(req, cid0);
+        if (guard.resp) return guard.resp;
+      }
 
       // AI import pipeline (uploads + imports) lives in import.ts. Delegate first;
       // it returns null for any non-import path so existing routes keep working.
       const importRes = await handleImport(req, conference.id, parts, method, readBody);
       if (importRes) return importRes;
-
-      const rest = "/" + parts.slice(2).join("/");
 
       if (rest === "/agenda" && method === "GET") {
         const ctx = await loadCtx(conference);

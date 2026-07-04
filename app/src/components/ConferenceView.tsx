@@ -8,6 +8,7 @@ import type { AgendaSnapshot } from '../lib/api';
 import { AgendaProvider, buildAgenda } from '../lib/data';
 import type { Agenda } from '../lib/data';
 import { WorkflowProvider, useWorkflow } from '../lib/workflow';
+import { useAuth } from '../lib/auth';
 import RoleSwitcher from './RoleSwitcher';
 import type { AppRole } from './RoleSwitcher';
 import Today from './secretariat/Today';
@@ -18,6 +19,11 @@ import ChairView from './ChairView';
 import SpeakerView from './SpeakerView';
 import AttendeeView from './AttendeeView';
 import ImportWizard from './ImportWizard';
+import AccountMenu from './AccountMenu';
+
+// The user's effective role for THIS conference: admin overrides everything, otherwise the
+// membership role. 'none' = signed in but has no membership here (and isn't an admin).
+type ConfRole = 'admin' | 'secretariat' | 'chair' | 'speaker' | 'attendee' | 'none';
 
 type SecTab = 'today' | 'dashboard' | 'agenda' | 'activity';
 type LoadState = 'loading' | 'ready' | 'error';
@@ -28,6 +34,13 @@ function goApp(confId: string) { window.location.hash = `#/c/${encodeURIComponen
 export default function ConferenceView(
   { confId, onBack, view = 'app' }: { confId: string; onBack: () => void; view?: 'app' | 'import' },
 ) {
+  const { me } = useAuth();
+  const membership = me?.memberships.find((m) => m.conference_id === confId);
+  const role: ConfRole = me?.user.is_admin
+    ? 'admin'
+    : (membership?.role as ConfRole) ?? 'none';
+  const boundPersonId = membership?.person_id ?? null;
+
   const [state, setState] = useState<LoadState>('loading');
   const [agenda, setAgenda] = useState<Agenda | null>(null);
   // A conference that loaded fine but has no sessions/people yet — the setup entry point.
@@ -53,6 +66,32 @@ export default function ConferenceView(
   };
 
   useEffect(load, [confId]);
+
+  // Signed in but no access to this conference (and not an admin) → friendly stop.
+  if (role === 'none') {
+    return (
+      <div className="app">
+        <MiniHeader onBack={onBack} name="Conference" />
+        <div className="landing-empty">
+          <div className="status-card amber" style={{ maxWidth: 480, margin: '0 auto', textAlign: 'left' }}>
+            <div className="sc-title">You don't have access to this conference</div>
+            <div className="sc-body">
+              Ask your organizer to add you if you think this is a mistake.
+            </div>
+            <div className="btnrow" style={{ marginTop: 12 }}>
+              <button className="btn" onClick={onBack}>‹ All conferences</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Import wizard is an organiser tool — admins + secretariat only.
+  if (view === 'import' && role !== 'admin' && role !== 'secretariat') {
+    goApp(confId);
+    return null;
+  }
 
   // Import wizard mode: render inside the conference context (needs confId + name + a way back).
   if (view === 'import') {
@@ -103,7 +142,8 @@ export default function ConferenceView(
   }
 
   // Friendly setup hero when the conference has no schedule yet (unless the user chose to skip).
-  if (empty && !skipEmpty) {
+  // Only organisers see the import CTA; other roles fall through to their (empty) view.
+  if (empty && !skipEmpty && (role === 'admin' || role === 'secretariat')) {
     return (
       <div className="app">
         <MiniHeader onBack={onBack} name={agenda.seed.event.name} />
@@ -131,7 +171,8 @@ export default function ConferenceView(
   return (
     <AgendaProvider agenda={agenda}>
       <WorkflowProvider confId={confId}>
-        <Shell onBack={onBack} name={agenda.seed.event.name} confId={confId} />
+        <Shell onBack={onBack} name={agenda.seed.event.name} confId={confId}
+          role={role} boundPersonId={boundPersonId} />
       </WorkflowProvider>
     </AgendaProvider>
   );
@@ -147,7 +188,33 @@ function MiniHeader({ onBack, name }: { onBack: () => void; name: string }) {
   );
 }
 
-function Shell({ onBack, name }: { onBack: () => void; name: string; confId: string }) {
+function Shell({ onBack, name, role: confRole, boundPersonId }:
+  { onBack: () => void; name: string; confId: string; role: ConfRole; boundPersonId: string | null }) {
+  // Organisers (admin/secretariat) get the full app with the preview RoleSwitcher; everyone
+  // else is locked to their single view.
+  const canSwitch = confRole === 'admin' || confRole === 'secretariat';
+
+  if (!canSwitch) {
+    return (
+      <div className="app">
+        <header className="top">
+          <button className="linkback" onClick={onBack} style={{ marginBottom: 0 }}>‹ All conferences</button>
+          <h1 style={{ marginLeft: 4 }}>AgendaPilot</h1>
+          <div className="sub">{name}</div>
+          <div style={{ marginLeft: 'auto' }}><AccountMenu /></div>
+        </header>
+        {confRole === 'chair' && <ChairView />}
+        {confRole === 'speaker' && <SpeakerView boundPersonId={boundPersonId} />}
+        {confRole === 'attendee' && <AttendeeView />}
+      </div>
+    );
+  }
+
+  return <OrganiserShell onBack={onBack} name={name} />;
+}
+
+// The full existing secretariat app, with the role-preview switcher.
+function OrganiserShell({ onBack, name }: { onBack: () => void; name: string }) {
   const [role, setRole] = useState<AppRole>('secretariat');
   const [tab, setTab] = useState<SecTab>('today');
   const wf = useWorkflow();
@@ -160,8 +227,9 @@ function Shell({ onBack, name }: { onBack: () => void; name: string; confId: str
         <button className="linkback" onClick={onBack} style={{ marginBottom: 0 }}>‹ All conferences</button>
         <h1 style={{ marginLeft: 4 }}>AgendaPilot</h1>
         <div className="sub">{name}</div>
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <RoleSwitcher role={role} onChange={setRole} />
+          <AccountMenu />
         </div>
       </header>
 
